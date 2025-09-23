@@ -5,5 +5,7 @@ This script is aims to fishing in PartyAnimals automatically.
 
 # More details about version
 Python 310
+
 Paddlepaddle 2.6.2
+
 Paddleocr 2.9.1
