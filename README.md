@@ -2,3 +2,8 @@
 This script is aims to fishing in PartyAnimals automatically.
 
 ![image](https://github.com/SmerryBeta/PA_FISHERMAN/blob/main/github_tutorial_img/howtouses.png)
+
+# More details about version
+Python 310
+Paddlepaddle 2.6.2
+Paddleocr 2.9.1
