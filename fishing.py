@@ -1,16 +1,18 @@
 import datetime
 import os
+import shutil
+import threading
 import time
+from typing import Callable
 
 import cv2
 import numpy as np
 import pyautogui
 import yaml
-
-from fisher_obj import HotKeyFrameWork, Log
 from paddleocr import PaddleOCR
-
 from pynput.mouse import Controller, Button
+
+from fisher_obj import HotKeyFrameWork, Log, color
 
 
 class YamlConfig:
@@ -25,8 +27,10 @@ class YamlConfig:
         初始化
         """
         self.file_name = file_name
+        self.load()
 
-        with open(file_name, "r", encoding="utf-8") as file:
+    def load(self):
+        with open(self.file_name, "r", encoding="utf-8") as file:
             self.content = dict(yaml.safe_load(file))
 
     def save(self) -> bool:
@@ -45,40 +49,79 @@ MOUSE = Controller()
 # 钓到鱼识别器
 GOT = cv2.imread("you_got.png")
 # 初始化 OCR 模型
-OCR_RECOGNIZER = PaddleOCR(use_angle_cls=True, rec=True, show_log=False, cls=True)
-
-# 定义图片截取范围
-X1 = YAML_READER.content['x1']
-X2 = YAML_READER.content['x2']
-Y1 = YAML_READER.content['y1']
-Y2 = YAML_READER.content['y2']
+OCR_RECOGNIZER = PaddleOCR(
+    use_angle_cls=True,
+    rec=True,
+    show_log=False,
+    cls=True,
+    # det_model_dir="models/det/ch/ch_PP-OCRv4_det_infer",
+    # rec_model_dir="models/rec/ch/ch_PP-OCRv4_rec_infer",
+    # cls_model_dir="models/cls/ch_ppocr_mobile_v2.0_cls_infer"
+)
+# 日志器
+logger = Log(__name__)
 
 # 图片日志写入路径
 PATH: str = datetime.datetime.now().strftime('%Y.%m.%d_fishing')
 os.makedirs(f"log/{PATH}", exist_ok=True)
 
+# 定义图片截取范围
+X1: int
+X2: int
+Y1: int
+Y2: int
+
 # 失败异常值处理
-F_X1 = YAML_READER.content['failure_x1']
-F_X2 = YAML_READER.content['failure_x2']
-F_Y1 = YAML_READER.content['failure_y1']
-F_Y2 = YAML_READER.content['failure_y2']
+F_X1: int
+F_X2: int
+F_Y1: int
+F_Y2: int
 
-# 钓鱼时间
-FISHING_TIMES = YAML_READER.content['FISHING_TIMES']
-
-# 日志器
-logger = Log(__name__)
+# 钓鱼次数
+FISHING_TIMES: int
 
 # 抛竿用的时间
-THROWING_ROD_TIME = YAML_READER.content['THROWING_ROD_TIME']
+THROWING_ROD_TIME: float
+
+# 展示钓上来的鱼的时间 (单位: 秒)
+SHOW_FISH_TIME: float
 
 # 首次拉杆/松杆用时
-PULL_TIME = YAML_READER.content['PULL_TIME']
-RELEASE_TIME = YAML_READER.content['RELEASE_TIME']
+PULL_TIME: float
+RELEASE_TIME: float
 
 # 循环拉杆/松杆控制指针用时
-PULL_TIME_LOOP = YAML_READER.content['PULL_TIME_LOOP']
-RELEASE_TIME_LOOP = YAML_READER.content['RELEASE_TIME_LOOP']
+PULL_TIME_LOOP: float
+RELEASE_TIME_LOOP: float
+
+# 脚本开关按钮
+RUNNING_PAUSE_BTN: str = "f8"
+
+# 关闭开启提示音
+SOUND: bool = True
+
+# 关闭开启提示音
+LOG_AUTO_CLEANS_UP: bool = True
+
+
+def Load(reload: bool = True):
+    """
+    这样就可以支持热重载了
+    """
+    # 刷新 Yaml 在内存中的内容
+    if reload:
+        YAML_READER.load()
+
+    # 加载全局变量
+    for k, v in YAML_READER.content.items():
+        if k == "THROWING_ROD_TIME":
+            v = min(v, 2.5)
+        elif k == "SHOW_FISH_TIME":
+            v = min(max(v, 0.6), 60)
+
+        globals()[k] = v
+
+    logger.info("全局变量加载完毕！")
 
 
 def ParseImageText(img) -> str:
@@ -182,11 +225,51 @@ class Fisherman(HotKeyFrameWork):
     """
     # 诱饵数量
     term: int = 0
+    LEFT_BTN: Button = Button.left
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, start_btn: str, close_btn: str = "None", beep: bool = True):
+        super().__init__(hold=False, start_btn=start_btn, close_btn=close_btn, beep=beep)
+        threading.Thread(
+            target=self.cmdHandler
+        ).start()
+        self.hold()
+
+    def print_msg(self):
+        print(color.yellow + "*=" * 20 + color.clear + "\n\n",
+              f"{color.red}     按下 {color.blue}{self.start_btn.upper()} {color.red}启动或暂停脚本{color.clear}\n"
+              f"{color.red}      指令 {color.blue}/reload {color.red}重载配置文件{color.clear}\n "
+              f"{color.red}     指令 {color.blue}/exit {color.red}关闭脚本{color.clear}\n\n",
+              color.yellow + "*=" * 20 + color.clear)
+
+    def cmdHandler(self):
+        """
+        支持一些普通指令
+        """
+        while not self.exit_sign:
+            cmd = input()
+            logger.info(f"用户提交了指令 -> \"{cmd}\"")
+
+            if cmd.startswith("/"):
+                cmd = cmd[1:]
+
+            # 关闭脚本指令
+            if cmd == "exit":
+                self.exit()
+
+            # 重载指令
+            elif cmd == "reload":
+                Load()
+
+            # 对于无法识别的指令
+            else:
+                logger.info("未知的指令... 以下是可用指令列表")
+                logger.info("- reload: 从配置文件中重载全局变量")
+                logger.info("- exit: 关闭脚本")
+        else:
+            logger.info("正在关闭指令处理器... ")
 
     def pause(self):
+        """ 暂停脚本 """
         self.term = 0
         super().pause()
 
@@ -196,51 +279,83 @@ class Fisherman(HotKeyFrameWork):
         :return:
         """
         # 获得诱饵数量
-        num: int = GetNumOfBails()
-        logger.info(f"获取到的诱饵数量为 &a{num}")
+        num: int = -1
+        checkBails: bool = True
         while self.running:
             # 检查识别到的诱饵数量
             self.term += 1
-            if num in [0, -1]:
-                cv2.imwrite(f"log/{PATH}/{GetTimeForImg()}_IllegalNumOfRod.png", GetScreenImg())
-                logger.error(f"{self.term}: 诱饵的数量是非法的 -> \"{num}\"")
-                self.pause()
+            if checkBails:
+                num = GetNumOfBails()
+                logger.info(f"获取到的诱饵数量为 &a{num}")
+                checkBails = False
 
-            # 目标数量
+            if num in [0, -1]:
+                cv2.imwrite(f"log/{PATH}/{GetTimeForImg()}_IllegalNumOfBails.png", GetScreenImg())
+                logger.warning(f"{self.term}: 诱饵的数量是非法的 -> \"{num}\"，未匹配到 or 配置文件 x1~y2 设置有误。")
+                self.pause()
+                return
+
+            # 计算目标数量
             targetBails = num - 1
 
             #  抛竿
             logger.info(f"{self.term}: 执行抛竿操作")
-            self.press()
-            self.sleep(THROWING_ROD_TIME)
-            self.release()
+            self.click(THROWING_ROD_TIME)
 
             # 检查当前状态能否钓鱼
+            logger.info(f"{self.term}: 检查当前状态能否钓鱼")
             self.sleep(1)
             msg: str = GetFishingMsg()
+
             if "无法钓鱼" in msg:
                 cv2.imwrite(f"log/{PATH}/{GetTimeForImg()}_CannotFishing.png", GetScreenImg())
-                logger.error(f"{msg}")
+                logger.warning(f"{msg}")
                 self.pause()
+                return
 
-            logger.info(f"{self.term}: 等待鱼上钩")
             # 等待上钩
+            logger.info(f"{self.term}: 等待鱼上钩")
             start = time.time()
+            normal: bool = True
             while self.running:
+                # 鱼上钩了
                 if GetNumOfBails() == targetBails:
                     break
+
+                # 检查鱼是否逃跑
+                result = GetFishingMsg()
+                # 鱼跑了 or 超时
+                if "鱼逃跑了" in result:
+                    num = targetBails
+                    msg = "FishEscape"
+                    cv2.imwrite(f"log/{PATH}/{GetTimeForImg()}_{msg}.png", GetScreenImg())
+                    logger.info(f"{self.term}: 钓鱼失败...CausedBy: &c" + msg)
+                    logger.info(f"{self.term}: 由于钓鱼失败, 下次钓鱼前需要检查诱饵数量...")
+                    checkBails = True
+                    normal = False
+                    break
+
                 # 超时
                 if time.time() - start > 60:
+                    cv2.imwrite(f"log/{PATH}/{GetTimeForImg()}_TimeOut.png", GetScreenImg())
+                    logger.info(f"{self.term}: 钓鱼失败...CausedBy: &cTimeOut")
+
+                    # 做诱饵数量检查
+                    logger.info(f"{self.term}: 由于钓鱼超时, 下次钓鱼前需要检查诱饵数量...")
+                    checkBails = True
+                    normal = False
                     break
-                time.sleep(0.3)
+                time.sleep(0.15)
             else:
+                return
+
+            if not normal:
                 continue
 
-            logger.info(f"{self.term}: 鱼上钩了")
             # 上钩阶段：先拉紧6秒，再松手，再反复拉松直到抓上来为止
-            self.press()
-            self.sleep(PULL_TIME)
-            self.release()
+            logger.info(f"{self.term}: 鱼上钩了")
+
+            self.click(PULL_TIME)
             self.sleep(RELEASE_TIME)
 
             start = time.time()
@@ -252,59 +367,81 @@ class Fisherman(HotKeyFrameWork):
                     cv2.imwrite(f"log/{PATH}/{GetTimeForImg()}_Got.png", GetScreenImg())
                     logger.info(f"{self.term}: 正在跳过展示鱼阶段")
                     # 把展示成果的界面点掉，然后继续钓鱼
-                    self.sleep(2)
+                    self.sleep(SHOW_FISH_TIME)
                     self.click()
-                    self.sleep(2)
+                    self.sleep(0.3)
                     break
 
                 # 检查鱼是否逃跑
-                img = GetZoneImage(
-                    F_X1,
-                    F_X2,
-                    F_Y1,
-                    F_Y2,
-                )
-                result = ParseImageText(img)
-
-                second_condition = time.time() - start > 30
+                result = GetFishingMsg()
+                # 检查是否超时
+                second_condition: bool = time.time() - start > 30
                 # 鱼跑了 or 超时
                 if "鱼逃跑了" in result or second_condition:
                     num = targetBails
                     msg = "FishEscape" if not second_condition else "TimeOut"
                     cv2.imwrite(f"log/{PATH}/{GetTimeForImg()}_{msg}.png", GetScreenImg())
                     logger.info(f"{self.term}: 钓鱼失败...CausedBy: &c" + msg)
-                    self.sleep(3)
+                    checkBails = True
+                    self.sleep(1)
                     break
 
-                self.press()
-                self.sleep(PULL_TIME_LOOP)
-                self.release()
+                self.click(PULL_TIME_LOOP)
                 self.sleep(RELEASE_TIME_LOOP)
             else:
-                continue
+                return
 
             #  没有诱饵了，自动暂停脚本
             if FISHING_TIMES <= -1 and num == 0 \
-                    or FISHING_TIMES <= self.term \
+                    or self.term >= FISHING_TIMES > 0 \
                     or num == 0:
                 self.pause()
+                return
 
-    @staticmethod
-    def press():
+    def press(self):
         """ 摁下左键 """
-        MOUSE.press(Button.left)
+        MOUSE.press(self.LEFT_BTN)
 
-    @staticmethod
-    def release():
+    def release(self):
         """ 释放左键 """
-        MOUSE.release(Button.left)
+        MOUSE.release(self.LEFT_BTN)
 
-    def click(self):
+    def click(self, duration: float = 0.1):
         # 左键点击一次
         self.press()
-        time.sleep(0.1)
+        time.sleep(duration)
         self.release()
 
+    def runTask(self, task: Callable, elseDo: Callable = None):
+        """
+        执行一些任务，当 running 变为 False 的时候也可以及时停下来。
+        :param task: 任务， 返回 bool。
+        :param elseDo: 如果不 running 了执行啥 ， 返回 bool。
+        :return: task or elseDo 返回的 bool 值
+        """
+        while self.running:
+            if task():
+                return
+        else:
+            if elseDo is not None:
+                elseDo()
+
+
+def CleanUpLogImg():
+    if not LOG_AUTO_CLEANS_UP:
+        return
+
+    file_path: str = (datetime.datetime.now() + datetime.timedelta(days=-1)). \
+        strftime('log/%Y.%m.%d_fishing')
+
+    if os.path.isdir(file_path):
+        shutil.rmtree(file_path)  # 删除整个目录
+        logger.info(f"已自动清理目录: {file_path}")
+
+
+# 重载全局变量
+Load(reload=False)
 
 if __name__ == '__main__':
-    Fisherman()
+    CleanUpLogImg()
+    Fisherman(start_btn=RUNNING_PAUSE_BTN, beep=SOUND)

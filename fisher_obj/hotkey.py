@@ -10,11 +10,6 @@ from .log import Log, color
 logger = Log(__name__)
 
 
-def asyncBeep(fre: int, dur: int):
-    t = threading.Thread(target=lambda: winsound.Beep(fre, dur))
-    t.start()
-
-
 class HotKeyFrameWork(ABC):
     """
     这个框架需要实现抽象方法do() ，用来执行按下热键后执行的操作。
@@ -26,11 +21,13 @@ class HotKeyFrameWork(ABC):
     def __init__(
             self,
             hold: bool = True,
+            beep: bool = True,
             start_btn="f8",
             close_btn="f12"
     ):
-        self.start_btn = start_btn
-        self.close_btn = close_btn
+        self.beep = beep
+        self.start_btn = start_btn.lower()
+        self.close_btn = close_btn.lower()
         # 发送提示
         self.print_msg()
 
@@ -47,6 +44,12 @@ class HotKeyFrameWork(ABC):
         :return: None
         """
         pass
+
+    def asyncBeep(self, fre: int, dur: int):
+        if self.beep:
+            threading.Thread(
+                target=lambda: winsound.Beep(fre, dur)
+            ).start()
 
     def print_msg(self):
         logger.info("脚本启动")
@@ -69,25 +72,30 @@ class HotKeyFrameWork(ABC):
                 self.thread = threading.Thread(target=self.do)
                 self.thread.start()
                 logger.info(f"&a程序已启动")
+                self.asyncBeep(500, 1000)
             else:
                 self.thread.join()
                 logger.info(f"&c程序已暂停")
+                self.asyncBeep(500, 1000)
 
         # 退出脚本
         elif press_key.name == self.close_btn:
-            logger.info("&b正在关闭程序！")
-            # 关闭脚本
-            self.running = False
-            self.exit_sign = True
+            self.exit()
+
+    def exit(self):
+        logger.info("&b正在关闭程序！")
+        # 关闭脚本
+        self.running = False
+        self.exit_sign = True
 
     def hold(self):
         try:
             while not self.exit_sign:
                 time.sleep(0.1)
-            asyncBeep(666, 1000)
+            self.asyncBeep(666, 1000)
         except KeyboardInterrupt as e:
             logger.info(f"&b程序已被关闭: {e}")
-            asyncBeep(666, 1000)
+            self.asyncBeep(666, 1000)
 
     def sleep(self, t: float):
         """
@@ -103,3 +111,4 @@ class HotKeyFrameWork(ABC):
         if self.running:
             self.running = not self.running
             logger.info(f"&c程序已暂停")
+            self.asyncBeep(500, 1000)
