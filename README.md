@@ -34,5 +34,6 @@ REALEASE for REALEASE_TIMEE >> Loops with pull for PULL_TIME_LOOP second and rea
 
 # What I wants to say
 
-oh~ 猛兽的策划好像没母亲~ 暗改了爆率又暗改手感~ 
+oh~ 猛兽的策划好像没母亲~ 暗改了爆率, 又暗改手感~ (The rhythm of "跳楼机" which is a Chinese song)
+
 <img width="594" height="923" alt="image" src="https://github.com/user-attachments/assets/5fa907cf-37f1-46bf-9733-cb97fa73f508" />
