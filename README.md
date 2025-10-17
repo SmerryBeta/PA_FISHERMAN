@@ -13,13 +13,21 @@ Paddleocr 2.9.1
 # The statements you need to run in the terminal which can install the dependencies for running this script.
 
 pip install keyboard
+
 pip install pyautogui
+
 pip install pynput
+
 pip install pyyaml
+
 pip install opencv-python
+
 pip install winsound
+
 pip install win32api
+
 pip install Paddlepaddle==2.6.2
+
 pip install Paddleocr==2.9.1
 
 # Other 
