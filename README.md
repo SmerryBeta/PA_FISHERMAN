@@ -25,7 +25,7 @@ pip install Paddleocr==2.9.1
 # Other 
 
 If your screen are NOT 1080p, You needs to replace the "you_got.png" from capture your own screen with the same content. Otherwise, the script may can't recognized the new turn of fishing is coming. 
-However, the X1~Y2 and F_X1 ~ F_Y2 are also essential for its work. X1~Y2 params are works on recognize how many bails we have, while the  F_X1~F_Y2 params are works on recognize the sometime occured like failure on fishing, fulled bucke, etc.
+However, the X1~Y2 and F_X1~F_Y2 are also essential for its work. X1~Y2 params are works on recognize how many bails we have, while the  F_X1~F_Y2 params are works on recognize the sometime occured like failure on fishing, fulled bucket, etc.
 
 # The entire process
 
