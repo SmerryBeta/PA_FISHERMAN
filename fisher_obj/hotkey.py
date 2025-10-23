@@ -101,11 +101,13 @@ class HotKeyFrameWork(ABC):
         """
         休眠方法，避免time.sleep(100)的长休眠导致无法立即关闭 or 暂停脚本
         """
-        while self.running and t > 0.1:
-            time.sleep(0.1)
-            t -= 0.1
-        else:
-            time.sleep(t)
+        while self.running:
+            if t > 0.1:
+                time.sleep(0.1)
+                t -= 0.1
+            else:
+                time.sleep(t)
+                return
 
     def pause(self):
         if self.running:

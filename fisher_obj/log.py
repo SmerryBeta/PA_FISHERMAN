@@ -60,8 +60,8 @@ class Log:
             path: str = 'log/',
             file_fmt: str = '%Y.%m.%d日志记录',
             time_fmt: str = '%Y.%m.%d %H:%M:%S',
-            error_fmt: str = f"{color.error}{color.red}%n | %t{color.yellow} >>{color.clear} ",
-            info_fmt: str = f"{color.info}{color.white}%n | %t{color.yellow} >>{color.clear} ",
+            error_fmt: str = f"{color.error}{color.red}%n {color.blue}|{color.clear} %t{color.yellow} >>{color.clear} ",
+            info_fmt: str = f"{color.info}{color.white}%n {color.blue}|{color.clear} %t{color.yellow} >>{color.clear} ",
             warning_fmt: str = f"{color.warning}{color.white}%n%t{color.yellow} >>{color.clear} "
     ):
         self.path = path
