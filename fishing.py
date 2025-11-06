@@ -12,6 +12,7 @@ import keyboard
 import numpy as np
 import pyautogui
 import yaml
+import pandas as pd
 from paddleocr import PaddleOCR
 from pynput.mouse import Controller, Button
 
@@ -47,14 +48,15 @@ class YamlConfig:
 
 # 配置读取器
 YAML_READER = YamlConfig("config.yml")
+
 # 鼠标控制器
 MOUSE = Controller()
-# 钓到鱼识别器
-GOT = cv2.imread("img/Got.png")
+
 # 加时按钮自动点掉
 ADD_TIME: bool = True
 Yes = cv2.imread("img/Yes.png")
 No = cv2.imread("img/No.png")
+
 # 初始化 OCR 模型
 OCR_RECOGNIZER = PaddleOCR(
     use_angle_cls=True,
@@ -143,8 +145,20 @@ IMG_STRATEGY = []
 # 存放小鱼干数量的图片
 DRY_FISH_IMG = {}
 
+# 品质
+QUALITY: list = []
 
-def RegStrategy(img_path: str):
+# 鱼的种类
+CATEGORY: list = []
+
+# 记录鱼的对象
+DATA: pd.DataFrame
+
+# 保存的未知
+DATA_PATH = "data.xlsx"
+
+
+def RegStrategy(img_path: str, threshold: float = 0.006):
     def decorator(func):
         img = cv2.imread(img_path)
         if img is None:
@@ -153,10 +167,31 @@ def RegStrategy(img_path: str):
         def rf(xy):
             func(img, xy)
 
-        IMG_STRATEGY.append((img, rf))
+        IMG_STRATEGY.append((img, rf, threshold))
         return rf
 
     return decorator
+
+
+def AddFish(name: str, quality: str, count: int):
+    """增加鱼数量，如果已存在则叠加"""
+    global DATA
+    existing = DATA[(DATA["种类"] == name) & (DATA["品质"] == quality)]
+    if not existing.empty:
+        DATA.loc[existing.index, "数量"] += count
+    else:
+        new_row = {"种类": name, "品质": quality, "数量": count}
+        DATA = pd.concat([DATA, pd.DataFrame([new_row])], ignore_index=True)
+    # 自动保存
+    if DATA_PATH.endswith('xlsx'):
+        try:
+            DATA.to_excel(DATA_PATH, index=False)
+        except PermissionError as e:
+            logger.error("无法计入数量，请关闭xlsx文件！", e)
+    else:
+        DATA.to_csv(DATA_PATH, index=False)
+    logger.info(f"捕获了{quality}的{name}共{count}个")
+    return DATA
 
 
 def SellFish():
@@ -230,6 +265,23 @@ def Load(reload: bool = True):
 
         globals()[k] = v
 
+    # 保存钓鱼记录的部分代码
+    file_path = globals()["DATA_PATH"]
+    # 判断文件是否存在
+    if os.path.exists(file_path):
+        # 文件存在，读取
+        globals()['DATA'] = pd.read_excel(file_path) \
+            if file_path.endswith('xlsx') \
+            else pd.read_csv(file_path)
+    else:
+        # 文件不存在，创建一个空的 DataFrame 并保存
+        globals()['DATA'] = pd.DataFrame(columns=["种类", "品质", "数量"])
+        if file_path.endswith('xlsx'):
+            globals()['DATA'].to_excel(file_path, index=False)
+        else:
+            globals()['DATA'].to_csv(file_path, index=False)
+        logger.info(f"📄已创建新的 Excel 文件： {file_path}")
+
     logger.info("全局变量加载完毕！")
 
 
@@ -255,10 +307,7 @@ def ParseImageText(img) -> str:
 
 def MatchImg(img_target, scn_img=None, threshold=0.006):
     if scn_img is None:
-        # 获取当前截图并转为 numpy 数组
-        screenshot = pyautogui.screenshot()
-        screenshot_np = np.array(screenshot)  # 将 PIL 图像转为 numpy 数组
-        scn_img = cv2.cvtColor(screenshot_np, cv2.COLOR_RGB2BGR)  # 转为 BGR 格式以兼容 OpenCV
+        scn_img = PyAutoGUIShot()
 
     # 确保图像正确加载
     if scn_img is None or img_target is None:
@@ -363,7 +412,7 @@ def onAddTime(_, __):
     xy = MatchImg(button)
     if xy:
         btn = 'esc' if not ADD_TIME else 'space'
-        duration = 2 if not ADD_TIME else 0.5
+        duration = 2
         keyboard.press(btn)
         time.sleep(MakeOscillation(duration))
         keyboard.release(btn)
@@ -383,7 +432,7 @@ def onAfk(_, __):
 
 @RegStrategy(img_path="img/Space.png")
 def onReadyForGame(_, __):
-    # 按 t 防掉线
+    # 按 space 准备游戏
     keyboard.press('space')
     time.sleep(0.05)
     keyboard.release('space')
@@ -392,9 +441,64 @@ def onReadyForGame(_, __):
 
 @RegStrategy(img_path="img/Start.png")
 def onStartGame(_, xy):
-    # 按 t 防掉线
+    # 点击启动游戏
     pyautogui.click(x=xy[0], y=xy[1])
     logger.info(f"检测到&c自定义房间页面...自动启动中")
+
+
+@RegStrategy(img_path="img/GiveUp.png")
+def onGiveUp(_, xy):
+    # 按 t 防掉线
+    pyautogui.click(x=xy[0], y=xy[1])
+    logger.info(f"检测到&c弃票...")
+
+
+@RegStrategy(img_path="img/Close.png")
+def onClose(_, __):
+    # 关闭UI
+    pyautogui.press('esc')
+    logger.info(f"检测到&c上一局详情UI...")
+
+
+@RegStrategy(
+    img_path="img/Me.png",
+    threshold=0.03,
+)
+def onPrepare(_, xy):
+    # 按 t 防掉线
+    sz = pyautogui.size()
+    tx = sz[0] * 0.5
+    ty = sz[1] * 0.8
+
+    if tx > xy[0]:
+        # 在右边
+        keyboard.press('a')
+        time.sleep(0.5)
+        keyboard.release('a')
+    else:
+        keyboard.press('d')
+        time.sleep(0.5)
+        keyboard.release('d')
+
+    if ty > xy[1]:
+        # 在上边
+        keyboard.press('w')
+        time.sleep(0.5)
+        keyboard.release('w')
+    else:
+        keyboard.press('s')
+        time.sleep(0.5)
+        keyboard.release('s')
+
+    logger.info(f"检测到&c准备状态...")
+
+
+@RegStrategy(img_path="img/PressF.png")
+def onPressF(_, __):
+    keyboard.press('f')
+    time.sleep(2)
+    keyboard.release('f')
+    logger.info(f"检测到&c长按F准备...")
 
 
 class Fisherman(HotKeyFrameWork):
@@ -469,6 +573,7 @@ class Fisherman(HotKeyFrameWork):
                 logger.info("未知的指令... 以下是可用指令列表")
                 logger.info("- reload: 从配置文件中重载全局变量")
                 logger.info("- addtime: 自动点击加时按钮的是/否")
+                logger.info("- info: 展示信息")
                 logger.info("- exit: 关闭脚本")
         else:
             logger.info("正在关闭指令处理器... ")
@@ -500,10 +605,13 @@ class Fisherman(HotKeyFrameWork):
         def check():
             logger.info("已启动加时检测线程")
             while self.running:
-                for k, v in IMG_STRATEGY:
-                    tg_pos = MatchImg(k)
+                for c in IMG_STRATEGY:
+                    tg_pos = MatchImg(
+                        img_target=c[0],
+                        threshold=c[2]
+                    )
                     if tg_pos:
-                        v(tg_pos)
+                        c[1](tg_pos)
 
                 # 三秒一次检查
                 self.sleep(3)
@@ -564,6 +672,7 @@ class Fisherman(HotKeyFrameWork):
                     num = targetBails
                     msg = "FishEscape"
                     cv2.imwrite(f"log/{PATH}/{GetTimeForImg()}_{msg}.png", GetScreenImg())
+                    AddFish("空军", "未知", 1)
                     logger.info(f"{self.term}: 钓鱼失败...CausedBy: &c" + msg)
                     logger.info(f"{self.term}: 由于钓鱼失败, 下次钓鱼前需要检查诱饵数量...")
                     checkBails = True
@@ -594,12 +703,22 @@ class Fisherman(HotKeyFrameWork):
             self.sleep(RELEASE_TIME)
 
             start = time.time()
+            x, y = pyautogui.size()
+            x1 = int(0.35 * x)
+            x2 = int(x - x1)
+            y1 = 0
+            y2 = int(0.185 * y)
             while self.running:
                 # 抓成功了
-                if MatchImg(GOT) is not None:
+                csq = self._judgeGot(x1, x2, y1, y2)
+                if csq[2]:
                     num = targetBails
                     # 日志记录
-                    cv2.imwrite(f"log/{PATH}/{GetTimeForImg()}_Got.png", GetScreenImg())
+                    cv2.imwrite(
+                        f"log/{PATH}/{GetTimeForImg()}_"
+                        f"Got_{csq[1]}.png",
+                        GetScreenImg()
+                    )
                     logger.info(f"{self.term}: 正在跳过展示鱼阶段")
                     # 把展示成果的界面点掉，然后继续钓鱼
                     self.sleep(SHOW_FISH_TIME)
@@ -616,6 +735,8 @@ class Fisherman(HotKeyFrameWork):
                     num = targetBails
                     msg = "FishEscape" if not second_condition else "TimeOut"
                     cv2.imwrite(f"log/{PATH}/{GetTimeForImg()}_{msg}.png", GetScreenImg())
+                    if not second_condition:
+                        AddFish("空军", "未知", 1)
                     logger.info(f"{self.term}: 钓鱼失败...CausedBy: &c" + msg)
                     checkBails = True
                     self.sleep(1)
@@ -629,13 +750,14 @@ class Fisherman(HotKeyFrameWork):
             # 发送表情包
             if 1 > SEND_EMO >= 0 and rd.random() < SEND_EMO:
                 logger.info("发送了表情")
-                self.sendEmo()
+                self._sendEmo()
                 self.sleep(0.3)
 
             #  没有诱饵了，自动暂停脚本
             if FISHING_TIMES <= -1 and num == 0 \
                     or self.term >= FISHING_TIMES > 0 \
                     or num == 0:
+                logger.info("暂停脚本...")
                 self.doAfk()
                 return
 
@@ -667,7 +789,7 @@ class Fisherman(HotKeyFrameWork):
             if elseDo is not None:
                 elseDo()
 
-    def sendEmo(self, angle: int = 180):
+    def _sendEmo(self, angle: int = 180):
         angel = math.radians(angle)
         self.sleep(0.1)
         keyboard.press('t')
@@ -683,6 +805,33 @@ class Fisherman(HotKeyFrameWork):
         )
         self.sleep(0.1)
         keyboard.release('t')
+
+    @staticmethod
+    def _getElementFromSentence(sentence: str, content: list):
+        for e in content:
+            if e in sentence:
+                return e
+        return "未知"
+
+    def _judgeGot(
+            self,
+            x1,
+            x2,
+            y1,
+            y2
+    ) -> tuple:
+        img = GetZoneImage(x1, x2, y1, y2)
+        result = ParseImageText(img)
+        if self._getElementFromSentence(
+                result,
+                ['你钓到了', '首次捕获']
+        ) == "未知":
+            return None, None, False
+
+        c = self._getElementFromSentence(result, CATEGORY)
+        q = self._getElementFromSentence(result, QUALITY)
+        AddFish(c, q, 1)
+        return c, q, True
 
 
 def CleansUpLogImg():

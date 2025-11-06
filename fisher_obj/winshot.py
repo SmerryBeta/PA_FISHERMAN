@@ -7,7 +7,7 @@ import numpy as np
 import win32gui
 import win32ui
 
-from obj import Color
+from .log import color
 
 # 加载 DWM 库
 dwmapi = ctypes.WinDLL("dwmapi")
@@ -124,8 +124,8 @@ class WinPic:
         if len(self.image.shape) == 3 and self.image.shape[2] == 4:  # 判断是否有透明通道
             self.image = cv2.cvtColor(self.image, cv2.COLOR_BGRA2BGR)
         # 保存图片
-        print(f'{Color.info}{Color.green}图片保存成功{Color.clear}'
-              if cv2.imwrite(path, self.image) else f'{Color.red}图片保存失败{Color.clear}')
+        print(f'{color.info}{color.green}图片保存成功{color.clear}'
+              if cv2.imwrite(path, self.image) else f'{color.red}图片保存失败{color.clear}')
 
     def show(self):
         cv2.imshow('Captured Window', self.image)
