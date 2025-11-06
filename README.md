@@ -30,6 +30,10 @@ pip install Paddlepaddle==2.6.2
 
 pip install Paddleocr==2.9.1
 
+pip install pandas
+
+pip install openpyxl
+
 # Other 
 
 If your screen are NOT 1080p, You needs to replace the "you_got.png" from capture your own screen with the same content. Otherwise, the script may can't recognized the new turn of fishing is coming. 
