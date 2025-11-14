@@ -34,6 +34,8 @@ pip install pandas
 
 pip install openpyxl
 
+pip install prompt_toolkit
+
 # Other 
 
 If your screen are NOT 1080p, You needs to replace the "you_got.png" from capture your own screen with the same content. Otherwise, the script may can't recognized the new turn of fishing is coming. 
