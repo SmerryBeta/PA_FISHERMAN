@@ -24,6 +24,8 @@ pip install opencv-python
 
 pip install winsound
 
+pip install pywin32
+
 pip install win32api
 
 pip install Paddlepaddle==2.6.2
